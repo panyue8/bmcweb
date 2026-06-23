@@ -1,0 +1,222 @@
+Summary / Interface checklist (Redfish)
+
+1) Root
+- Path
+  - GET /redfish/v1/
+- Purpose
+  - Entry point: lists available top-level services and collections (Systems, Chassis, Managers, AccountService, SessionService, etc.).
+- Main properties
+  - @odata.type, Name, RedfishVersion, UUID, Links (e.g., Sessions, Registries), Services (e.g., SessionService).
+
+2) Systems
+- Paths
+  - GET /redfish/v1/Systems
+  - GET /redfish/v1/Systems/{SystemId}
+- Primary purpose
+  - Represents computer systems (hosts) managed by the service.
+- Important properties (typical)
+  - Id, Name, Description
+  - Manufacturer, Model, SKU, SerialNumber, PartNumber
+  - Bios (object with version / settings link)
+  - Boot (BootSourceOverrideTarget, UefiTarget)
+  - Status: { State, Health, HealthRollup }
+  - ProcessorSummary, MemorySummary, Storage (link)
+  - EthernetInterfaces (link collection)
+  - Links (e.g., Chassis, ManagedBy)
+- Example GET (abbreviated)
+  - Request:
+    - GET /redfish/v1/Systems/1
+    - Accept: application/json
+  - Response (200):
+    {
+      "@odata.id": "/redfish/v1/Systems/1",
+      "Id": "1",
+      "Name": "Host System",
+      "Manufacturer": "ACME",
+      "Model": "X1000",
+      "SerialNumber": "SN123456",
+      "Status": { "State": "Enabled", "Health": "OK" },
+      "Bios": { "@odata.id": "/redfish/v1/Systems/1/Bios" },
+      "EthernetInterfaces": { "@odata.id": "/redfish/v1/Systems/1/EthernetInterfaces" },
+      ...
+    }
+
+3) Chassis
+- Paths
+  - GET /redfish/v1/Chassis
+  - GET /redfish/v1/Chassis/{ChassisId}
+- Purpose
+  - Physical containers (racks, enclosures, boards).
+- Key properties
+  - Id, Name, Location, Thermal, Power, Status, Links (Contains, ManagedBy)
+
+4) Managers
+- Paths
+  - GET /redfish/v1/Managers
+  - GET /redfish/v1/Managers/{ManagerId}
+- Purpose
+  - Management controllers (BMC/IMM/iLO).
+- Key properties
+  - FirmwareVersion, DateTime, ManagerType, GraphicalConsole, SerialConsole, CommandShell, Links (ManagerForServers)
+- Actions
+  - Manager.Reset: POST /redfish/v1/Managers/{id}/Actions/Manager.Reset
+    - Body: { "ResetType": "GracefulRestart" } (ResetType values per schema)
+    - Response: 204 or 202
+
+5) AccountService & Accounts
+- Paths
+  - GET /redfish/v1/AccountService
+  - GET /redfish/v1/AccountService/Accounts/{AccountId}
+  - POST /redfish/v1/AccountService/Accounts (create account) — may be restricted
+- Important properties
+  - Accounts (collection), Roles (link), LDAP/Radius configuration
+  - Account object: UserName, Password (write-only on create), RoleId, Enabled
+- Examples
+  - Create account:
+    - POST /redfish/v1/AccountService/Accounts
+    - Body: { "UserName":"bob", "Password":"pass", "RoleId":"Admin" }
+    - Response: 201 Created with Location header
+  - Update (PATCH) an account:
+    - PATCH /redfish/v1/AccountService/Accounts/2
+    - Body: { "Enabled": false } 
+    - Response: 200 OK
+
+6) SessionService (authentication)
+- Paths
+  - GET /redfish/v1/SessionService
+  - POST /redfish/v1/SessionService/Sessions
+  - DELETE /redfish/v1/SessionService/Sessions/{SessionId}
+- Purpose
+  - Create/terminate sessions, return X-Auth-Token
+- Example: create a session (login)
+  - Request:
+    - POST /redfish/v1/SessionService/Sessions
+    - Body: { "UserName": "admin", "Password": "pass" }
+  - Response (201):
+    - Headers: Location: /redfish/v1/SessionService/Sessions/123
+               X-Auth-Token: <token>
+    - Body: { "@odata.id": "/redfish/v1/SessionService/Sessions/123", "Id": "123", "UserName": "admin" }
+
+7) Roles
+- Paths
+  - GET /redfish/v1/AccountService/Roles
+  - GET /redfish/v1/AccountService/Roles/{RoleId}
+- Purpose
+  - Define privilege sets (ReadOnly, Operator, Administrator)
+- Key fields
+  - Id, IsPredefined, AssignedPrivileges (array), OemPrivileges
+
+8) EthernetInterfaces / Network
+- Paths
+  - GET /redfish/v1/Managers/{mgr}/NetworkInterfaces
+  - GET /redfish/v1/Systems/{sys}/EthernetInterfaces
+- Key properties
+  - MACAddress, IPv4Addresses (array of address objects), IPv6Addresses, SpeedMbps, MTUSize, Status
+- Example GET interface entry:
+  {
+    "Id": "eth0",
+    "Name": "Ethernet Interface",
+    "MACAddress": "AA:BB:CC:DD:EE:FF",
+    "IPv4Addresses": [ { "Address": "192.0.2.10", "SubnetMask": "255.255.255.0", "AddressOrigin": "Static" } ],
+    "Status": { "State": "Enabled", "Health": "OK" }
+  }
+
+9) Storage, Volumes, Drives
+- Paths
+  - GET /redfish/v1/Systems/{sys}/Storage
+  - GET /redfish/v1/Storage/{StorageId}
+  - GET /redfish/v1/Systems/{sys}/Storage/{storageId}/Volumes
+  - GET /redfish/v1/Storage/{storageId}/Drives/{driveId}
+- Common properties
+  - StorageControllers, CapacityBytes, Volumes collection (each Volume has CapacityBytes, RAIDType, Links.Drives)
+- Example: create a volume (if supported)
+  - POST /redfish/v1/Systems/1/Storage/1/Volumes
+  - Body: { "Name": "vol1", "CapacityBytes": 100000000000 }
+  - Response: 201 Created (may be asynchronous via Task)
+
+10) UpdateService (firmware update)
+- Paths
+  - GET /redfish/v1/UpdateService
+  - POST /redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate
+- Important fields
+  - HttpPushUri, ServiceEnabled, FirmwareInventory (link)
+- Example SimpleUpdate
+  - POST /redfish/v1/UpdateService/Actions/UpdateService.SimpleUpdate
+  - Body: { "ImageURI": "http://example.com/firmware.bin" }
+  - Response: 202 Accepted (operation may be an asynchronous Task)
+
+11) EventService
+- Paths
+  - GET /redfish/v1/EventService
+  - POST /redfish/v1/EventService/Subscriptions
+- Purpose
+  - Subscribe to Redfish events; includes delivery and protocol configuration.
+- Typical fields for subscription
+  - Destination, EventTypes, Context, Protocol
+
+12) Tasks / Asynchronous operations
+- Path
+  - GET /redfish/v1/Tasks
+  - GET /redfish/v1/TaskService/Tasks/{TaskId}
+- Structure
+  - Task object has TaskState (Running, Completed, Exception), StartTime, EndTime, Messages
+
+13) Schema & OData semantics
+- JSON schema-based; each resource has:
+  - @odata.type (schema), @odata.id, @odata.context, Id, Name
+- Actions and Action targets are exposed under "Actions": { "#Action.Name": { "target": "/.../Actions/..." } }
+- Links represent relationships and are usually objects with @odata.id or arrays of links.
+
+14) Common property patterns
+- Status: { State: "Enabled|Disabled", Health: "OK|Warning|Critical", HealthRollup }
+- Links: contains references like RelatedItems, ManagedBy, Chassis, Drives — usually: "Links": { "ManagedBy": [ { "@odata.id": "/redfish/v1/Managers/1" } ], "Oem": { ... } }
+- Oem: vendor-specific extensions
+- Actions: listed under "Actions" with keys like "#Resource.Action" and target URIs
+
+15) HTTP behavior and headers
+- Authentication
+  - Use X-Auth-Token header for authenticated sessions; Basic auth may be supported for some endpoints.
+- POST create responses
+  - 201 Created with Location header to new resource and possibly a response body with @odata.id.
+- Asynchronous operations
+  - 202 Accepted for operations started; may return a Task or Location of Task.
+- Error responses
+  - Standard OData error format:
+    {
+      "error": {
+        "code": "Base.1.0.GeneralError",
+        "message": "A general error has occurred. See ExtendedInfo for more information.",
+        "details": [...]
+      }
+    }
+
+16) Example: Reset action (manager)
+- POST /redfish/v1/Managers/1/Actions/Manager.Reset
+- Body:
+  { "ResetType": "GracefulRestart" }
+- Response:
+  - 200/204 or 202 with task
+
+17) Example: Change boot order or set BootSourceOverride
+- PATCH /redfish/v1/Systems/1
+- Body:
+  { "Boot": { "BootSourceOverrideEnabled": "Once", "BootSourceOverrideTarget": "Pxe" } }
+- Response: 200 OK or 202 if async
+
+18) Example: Query collection
+- GET /redfish/v1/Systems
+- Response:
+  {
+    "@odata.id": "/redfish/v1/Systems",
+    "Members@odata.count": 1,
+    "Members": [
+      { "@odata.id": "/redfish/v1/Systems/1" }
+    ]
+  }
+
+19) OEM extensions
+- OEM objects under "Oem" provide vendor-specific fields and actions; clients should tolerate unknown properties.
+
+20) Useful references (official)
+- Redfish specification root and JSON schema docs: https://www.dmtf.org/standards/redfish
+- Redfish examples and model definitions: Redfish Schema (e.g., ComputerSystem.v1_10_0.json) on DMTF site or Github redfish-schema repos.
